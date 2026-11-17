@@ -1,0 +1,31 @@
+.analysis/
+build/
+backups/
+node_modules/
+*.log
+.playwright-cli/
+output/
+__pycache__/
+dist/
+
+# Local credentials and environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Zalo application archives, backups and generated installers
+*.asar
+*.asar.*
+*.exe
+*.zip
+*.sha256
+*.tmp
+*.py[cod]
+*.spec
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

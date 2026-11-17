@@ -1,0 +1,30 @@
+{
+  "name": "zalo-sticker",
+  "version": "0.2.1",
+  "description": "Bộ sticker cá nhân cho Zalo PC, hỗ trợ xuất/nhập ZIP và khôi phục bản gốc.",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "check": "node --check src/giaolang-stickers.js && node --check src/sticker-pack.js",
+    "release:build": "python tools/package_release.py",
+    "portable:install": "python tools/portable.py install",
+    "patch:build": "python tools/portable.py build",
+    "patch:install": "python tools/portable.py install",
+    "patch:restore": "python tools/portable.py restore",
+    "patch:status": "python tools/portable.py status"
+  },
+  "keywords": ["zalo", "sticker", "windows", "personal-stickers"],
+  "author": "longurara",
+  "license": "UNLICENSED",
+  "repository": {"type":"git","url":"https://github.com/longurara/zalo_sticker.git"},
+  "bugs": {"url":"https://github.com/longurara/zalo_sticker/issues"},
+  "homepage": "https://github.com/longurara/zalo_sticker#readme",
+  "engines": {"node":">=22"},
+  "type": "commonjs",
+  "devDependencies": {
+    "acorn": "^8.19.0",
+    "fflate": "^0.8.3",
+    "react": "^16.14.0",
+    "react-dom": "^16.14.0"
+  }
+}
