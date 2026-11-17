@@ -42,7 +42,8 @@ class PortableTests(unittest.TestCase):
             "keep-this-file.txt":b"Other machine-specific resources stay unchanged."}
         write_asar(self.archive,self.files)
         self.original = self.archive.read_bytes()
-        self.profile = mock.object(patch,"MEMBER_SHA256",{name:hashlib.sha256(self.files[name]).hexdigest() for name in patch.MEMBER_SHA256})
+        members = {name:hashlib.sha256(self.files[name]).hexdigest() for name in patch.MEMBER_SHA256}
+        self.profile = mock.object(patch,"PROFILES",{patch.VERSION:{"bundle":patch.BUNDLE,"members":members}})
         self.profile.start()
         self.stop_check = mock.object(patch,"ensure_stopped")
         self.stop_check.start()
@@ -94,6 +95,27 @@ class PortableTests(unittest.TestCase):
         files={**self.files,"package.json":b'{"version":"99.1.1"}'}
         write_asar(newer,files)
         self.assertEqual(portable.discover([root]),newer.resolve())
+
+    def test_macos_app_bundle_install_and_restore(self):
+        mac = self.directory / "Applications/Zalo.app/Contents/Resources/app.asar"
+        write_asar(mac,self.files)
+        original = mac.read_bytes()
+        self.assertEqual(portable.discover([mac.parents[2]]),mac.resolve())
+        state = self.directory / "Library/Application Support/GiaoLangStickerPatch"
+        self.assertEqual(portable.install(mac,state)["status"],"installed")
+        self.assertIn(b"giaolang-pack.js",patch.Asar(mac).read("pc-dist/index.html"))
+        portable.restore(mac,state)
+        self.assertEqual(mac.read_bytes(),original)
+
+    def test_each_supported_version_uses_its_own_bundle(self):
+        files = {**self.files,"package.json":b'{"version":"26.11.10"}',"pc-dist/lazy/other.js":self.files[patch.BUNDLE]}
+        asar = self.directory / "other/Zalo.app/Contents/Resources/app.asar"
+        write_asar(asar,files)
+        members = {"pc-dist/lazy/other.js":hashlib.sha256(files["pc-dist/lazy/other.js"]).hexdigest(),
+                   "pc-dist/index.html":hashlib.sha256(files["pc-dist/index.html"]).hexdigest()}
+        with mock.object(patch,"PROFILES",{"26.11.10":{"bundle":"pc-dist/lazy/other.js","members":members}}):
+            portable.install(asar,self.state)
+        self.assertIn(b"giaolang-pack.js",patch.Asar(asar).read("pc-dist/index.html"))
 
     def test_corrupt_backup_blocks_restore(self):
         result=portable.install(self.archive,self.state)

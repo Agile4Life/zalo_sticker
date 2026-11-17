@@ -1,0 +1,31 @@
+name: macOS release build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["tools/**", "src/**", "tests/**", "distribution/**", ".github/workflows/release-macos.yml"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: macos-14, arch: arm64}       # Apple Silicon
+          - {runner: macos-15-intel, arch: x64}   # Intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: npm ci
+      - run: npm run check && npm test
+      - run: python -m unittest discover -s tests -p test_portable.py -v
+      - run: python -m pip install -r requirements-build.txt
+      - run: python tools/package_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GiaoLangSticker-macOS-${{ matrix.arch }}
+          path: dist/GiaoLangSticker-*-macOS-${{ matrix.arch }}.zip*

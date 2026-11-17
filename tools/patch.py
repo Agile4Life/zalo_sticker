@@ -21,6 +21,19 @@ MEMBER_SHA256 = {
     BUNDLE: "36fef10b316f84ceb54044b213366b63e3882c232a4024f2962e6a0be295fdb1",
     "pc-dist/index.html": "8d9753503c1a75bd29ab2e2d53d801d8f21d7a9b46ba817c2d61fe2857e16c2d",
 }
+# One entry per supported Zalo version. Each is pinned by member hashes, so a
+# different build with the same version is still refused. macOS (Intel and Apple
+# Silicon share one universal app.asar) is a separate Zalo release from Windows.
+PROFILES = {
+    VERSION: {"bundle": BUNDLE, "members": MEMBER_SHA256},
+    "26.11.10": {
+        "bundle": "pc-dist/lazy/default-login-main-startup-shared-worker-znotification.4bb5e1e2c2e9bab4f7b3.js",
+        "members": {
+            "pc-dist/lazy/default-login-main-startup-shared-worker-znotification.4bb5e1e2c2e9bab4f7b3.js": "32090ad21922a614ad11a12bff9709d269bff273667faa9314d237712abca38e",
+            "pc-dist/index.html": "794c6cd9b33148a514482f11ad6a6a1300b768059c3ed1d0dd3cbef14ab85ffc",
+        },
+    },
+}
 DEFAULT_ARCHIVE = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Zalo" / f"Zalo-{VERSION}/resources/app.asar"
 UI_ANCHOR = b"Te.propTypes={sendSticker:c.a.func.isRequired,dispatch:c.a.func.isRequired};var Re=Te,"
 MODULE_ANCHOR = b'Em8I:function(t,n,a){"use strict";'
@@ -47,7 +60,10 @@ class Asar:
             size, header_size, payload_size, json_size = struct.unpack("<4I", raw)
             if size != 4 or not 0 < json_size <= payload_size <= header_size <= 16 * 1024 * 1024:
                 raise ValueError("Unsupported ASAR header")
-            self.header = json.loads(stream.read(json_size))
+            raw_header = stream.read(json_size)
+            self.header = json.loads(raw_header)
+            # Electron on macOS pins this value in Info.plist (ElectronAsarIntegrity).
+            self.header_sha256 = hashlib.sha256(raw_header).hexdigest()
             self.base = 8 + header_size
 
     def entry(self, name: str):
@@ -85,9 +101,9 @@ def integrity(data: bytes, previous: dict | None) -> dict:
 def validate_profile(source: Path) -> str:
     archive = Asar(source)
     version = json.loads(archive.read("package.json"))["version"]
-    if version != VERSION:
-        raise ValueError(f"Zalo {version} chưa được hỗ trợ; bộ cài này dành cho {VERSION}.")
-    for name, expected in MEMBER_SHA256.items():
+    if version not in PROFILES:
+        raise ValueError(f"Zalo {version} chưa được hỗ trợ; bộ cài này dành cho {', '.join(PROFILES)}.")
+    for name, expected in PROFILES[version]["members"].items():
         if hashlib.sha256(archive.read(name)).hexdigest() != expected:
             raise ValueError(f"Mã Zalo {version} không khớp bản đã kiểm tra ({name}). Không ghi đè.")
     return version
@@ -97,11 +113,10 @@ def build(source: Path, output: Path, allow_matching_members=False) -> dict:
     original_sha256 = digest(source)
     if not allow_matching_members and original_sha256 != ORIGINAL_SHA256:
         raise ValueError("Bản Zalo không khớp bản gốc 26.11.12 đã kiểm tra. Không sửa tệp.")
-    validate_profile(source)
+    version = validate_profile(source)
     archive = Asar(source)
-    if json.loads(archive.read("package.json"))["version"] != VERSION:
-        raise ValueError("Version mismatch")
-    bundle = archive.read(BUNDLE)
+    bundle_name = PROFILES[version]["bundle"]
+    bundle = archive.read(bundle_name)
     # The method's fourth parameter is also named `a` (a boolean), shadowing
     # webpack's factory require. Capture the loader in the factory's own scope.
     bundle = replace_once(bundle, MODULE_ANCHOR,
@@ -114,7 +129,7 @@ def build(source: Path, output: Path, allow_matching_members=False) -> dict:
     index = replace_once(archive.read("pc-dist/index.html"), b'<script src="render.',
                          b'<script src="giaolang-zip.js"></script><script src="giaolang-pack.js"></script><script src="giaolang-stickers.js"></script><script src="render.')
     zip_code = b"/* fflate 0.8.3, MIT. See giaolang-fflate-LICENSE.txt. */\n(function(module,exports,define){\n" + (ASSETS / "vendor/fflate/index.js").read_bytes() + b"\n;globalThis.GiaoLangZip=globalThis.fflate;})(undefined,undefined,undefined);"
-    changes = {BUNDLE: bundle, "pc-dist/index.html": index,
+    changes = {bundle_name: bundle, "pc-dist/index.html": index,
                "pc-dist/giaolang-stickers.js": (ASSETS / "src/giaolang-stickers.js").read_bytes(),
                "pc-dist/giaolang-pack.js": (ASSETS / "src/sticker-pack.js").read_bytes(),
                "pc-dist/giaolang-zip.js": zip_code,
@@ -170,7 +185,7 @@ def build(source: Path, output: Path, allow_matching_members=False) -> dict:
                     raise ValueError(f"Untouched member changed: {name}")
                 remaining -= size
             unchanged += 1
-    report = {"version": VERSION, "original_sha256": original_sha256,
+    report = {"version": version, "original_sha256": original_sha256,
               "patched_sha256": digest(output), "changed_members": list(changes),
               "unchanged_members_verified": unchanged, "output": str(output)}
     (output.parent / "patch-manifest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -178,6 +193,11 @@ def build(source: Path, output: Path, allow_matching_members=False) -> dict:
 
 
 def ensure_stopped():
+    if sys.platform == "darwin":
+        # -x: exact name, so "Zalo Helper" and this tool are not matched.
+        if subprocess.run(["pgrep", "-x", "Zalo"], capture_output=True).returncode == 0:
+            raise ValueError("Zalo đang chạy. Thoát hẳn Zalo (Zalo → Thoát Zalo, hoặc ⌘Q) rồi chạy lại.")
+        return
     result = subprocess.run(["powershell.exe", "-NoProfile", "-Command",
                              "@(Get-Process -Name Zalo -ErrorAction SilentlyContinue).Count"],
                             capture_output=True, text=True, check=True)

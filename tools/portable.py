@@ -1,4 +1,4 @@
-"""Standalone Windows installer for GiaoLang personal stickers."""
+"""Standalone Windows / macOS installer for GiaoLang personal stickers."""
 from __future__ import annotations
 
 import argparse
@@ -27,6 +27,8 @@ def installed_roots():
         ("LOCALAPPDATA", "Programs/Zalo"), ("LOCALAPPDATA", "Zalo"),
         ("ProgramFiles", "Zalo"), ("ProgramFiles(x86)", "Zalo")]
         if os.environ.get(env)]
+    if sys.platform == "darwin":
+        roots += [Path("/Applications/Zalo.app"), Path.home() / "Applications/Zalo.app"]
     if sys.platform == "win32":
         import winreg
         for hive in [winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE]:
@@ -44,7 +46,7 @@ def discover(roots=None):
     choices = []
     for root in roots if roots is not None else installed_roots():
         candidates = []
-        for archive in [root / "resources/app.asar", *root.glob("Zalo-*/resources/app.asar")]:
+        for archive in [root / "resources/app.asar", root / "Contents/Resources/app.asar", *root.glob("Zalo-*/resources/app.asar")]:
             if not archive.is_file():
                 continue
             try:
@@ -57,7 +59,8 @@ def discover(roots=None):
     choices = list(dict.fromkeys(choices))
     if len(choices) != 1:
         if not choices:
-            raise ValueError("Không tìm thấy Zalo PC. Dùng --archive \"D:\\...\\resources\\app.asar\" để chỉ đường dẫn.")
+            example = "/Applications/Zalo.app/Contents/Resources/app.asar" if sys.platform == "darwin" else "D:\\...\\resources\\app.asar"
+            raise ValueError(f"Không tìm thấy Zalo PC. Dùng --archive \"{example}\" để chỉ đường dẫn.")
         raise ValueError("Có nhiều bản Zalo. Chọn một bản bằng --archive:\n" + "\n".join(map(str, choices)))
     return choices[0]
 
@@ -97,8 +100,8 @@ def inspect(archive, state_root):
     if not archive.is_file():
         raise ValueError("Không tìm thấy app.asar: " + str(archive))
     version = json.loads(patch.Asar(archive).read("package.json"))["version"]
-    if version != patch.VERSION:
-        raise ValueError(f"Máy đang có Zalo {version}; bộ cài này mới hỗ trợ {patch.VERSION}. Không thay tệp.")
+    if version not in patch.PROFILES:
+        raise ValueError(f"Máy đang có Zalo {version}; bộ cài này mới hỗ trợ {', '.join(patch.PROFILES)}. Không thay tệp.")
     directory, manifest = state_paths(archive, state_root)
     info = read_state(manifest, archive)
     current = patch.digest(archive)
@@ -116,6 +119,12 @@ def inspect(archive, state_root):
     return {"status":status,"archive":str(archive),"version":version,"patch_version":installed_version,
             "available_patch_version":PATCH_VERSION,
             "current_sha256":current,"source":str(source),"state_directory":str(directory)}, info
+
+
+def default_state_dir():
+    if sys.platform == "darwin":
+        return Path.home() / "Library/Application Support/GiaoLangStickerPatch"
+    return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "GiaoLangStickerPatch"
 
 
 def atomic_json(path, value):
@@ -188,10 +197,10 @@ def restore(archive, state_root, dry_run=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=f"GiaoLang Sticker {PATCH_VERSION} — Zalo PC {patch.VERSION}, Windows x64")
+    parser = argparse.ArgumentParser(description=f"GiaoLang Sticker {PATCH_VERSION} — Zalo PC {', '.join(patch.PROFILES)}; Windows x64, macOS Intel / Apple Silicon")
     parser.add_argument("action",choices=["install","restore","status","build"],nargs="?",default="install")
-    parser.add_argument("--archive",type=Path,help="Đường dẫn resources/app.asar nếu Zalo nằm ở vị trí khác")
-    parser.add_argument("--state-dir",type=Path,default=Path(os.environ.get("LOCALAPPDATA",Path.home())) / "GiaoLangStickerPatch")
+    parser.add_argument("--archive",type=Path,help="Đường dẫn app.asar nếu Zalo nằm ở vị trí khác (macOS: Zalo.app/Contents/Resources/app.asar)")
+    parser.add_argument("--state-dir",type=Path,default=default_state_dir())
     parser.add_argument("--dry-run",action="store_true",help="Chỉ kiểm tra, không cài hoặc gỡ")
     parser.add_argument("--output",type=Path,help="Tệp ASAR đầu ra cho lệnh build")
     parser.add_argument("--version",action="version",version=PATCH_VERSION)
@@ -224,4 +233,7 @@ if __name__ == "__main__":
         main()
     except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:
         print("Lỗi: " + str(error),file=sys.stderr)
+        if isinstance(error,PermissionError) and sys.platform == "darwin":
+            print("macOS chặn ghi vào ứng dụng khác. Mở Cài đặt hệ thống → Quyền riêng tư & Bảo mật → "
+                  "Quản lý ứng dụng (hoặc Toàn quyền truy cập đĩa), bật cho Terminal rồi chạy lại.",file=sys.stderr)
         sys.exit(1)

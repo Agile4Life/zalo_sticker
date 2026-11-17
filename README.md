@@ -25,8 +25,9 @@ Zalo Sticker, còn gọi là GiaoLang Sticker, thêm mục **★ Sticker của t
 | Thành phần | Yêu cầu |
 | --- | --- |
 | Bản vá hiện tại | **0.2.1** |
-| Zalo PC | **26.11.12**, mã thành phần khớp bản đã kiểm tra |
-| Bộ cài độc lập | Windows x64; đã thử trên Windows 11 |
+| Zalo PC (Windows) | **26.11.12**, mã thành phần khớp bản đã kiểm tra |
+| Zalo cho macOS | **26.11.10**, mã thành phần khớp bản đã kiểm tra (app universal: Intel và Apple Silicon) |
+| Bộ cài độc lập | Windows x64; macOS arm64 (Apple Silicon) và macOS x64 (Intel) |
 | Máy chỉ sử dụng bộ cài | Không cần Python, Node.js hoặc npm |
 
 **Không áp dụng cho mọi phiên bản Zalo.** Trình cài từ chối thay tệp nếu phiên bản hoặc mã thành phần không khớp. Zalo tự cập nhật có thể làm bản vá mất hiệu lực; cần kiểm tra và bổ sung hỗ trợ cho phiên bản mới.
@@ -46,7 +47,22 @@ Zalo Sticker, còn gọi là GiaoLang Sticker, thêm mục **★ Sticker của t
 
 Giữ các tệp `.cmd` và `GiaoLangStickerPatch.exe` cùng thư mục. Với Zalo cài trong tài khoản người dùng, thông thường không cần quyền quản trị.
 
-### Các lệnh đi kèm
+### Cài đặt trên macOS (Apple Silicon và Intel)
+
+1. Tải đúng tệp trong [Releases](https://github.com/longurara/zalo_sticker/releases): `GiaoLangSticker-0.2.1-macOS-arm64.zip` (chip M1/M2/M3/M4) hoặc `GiaoLangSticker-0.2.1-macOS-x64.zip` (chip Intel). Nếu chưa có, xem [tự đóng gói](#tự-đóng-gói-bộ-cài).
+2. Thoát hẳn Zalo (**⌘Q**), giải nén ZIP, rồi gỡ cờ chặn của macOS cho tệp tải về:
+
+```bash
+xattr -dr com.apple.quarantine GiaoLangSticker-0.2.1-macOS-*
+```
+
+3. Bấm đúp `install.command` (hoặc chạy `./install.command`), rồi mở lại Zalo → **Sticker** → **★**.
+
+Nếu macOS báo `Operation not permitted`, bật **Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Quản lý ứng dụng** (hoặc Toàn quyền truy cập đĩa) cho Terminal rồi chạy lại. Gỡ bản vá bằng `./uninstall.command`; trạng thái bằng `./status.command`.
+
+Bộ cài chỉ thay `Zalo.app/Contents/Resources/app.asar`. Không ký lại ứng dụng và không sửa `Info.plist`, nên keychain và quyền của Zalo không đổi; đổi lại, chữ ký của `Zalo.app` không còn khớp cho đến khi gỡ bản vá. Bản sao lưu nằm trong `~/Library/Application Support/GiaoLangStickerPatch/`. Chi tiết trong `README.txt` của gói macOS.
+
+### Các lệnh đi kèm (Windows)
 
 | Lệnh | Chức năng |
 | --- | --- |
@@ -119,7 +135,8 @@ Công cụ kiểm tra bản sao lưu rồi khôi phục `app.asar` gốc. **Gỡ
 Bản sao lưu chương trình và thông tin cài đặt nằm trong:
 
 ```text
-%LOCALAPPDATA%\GiaoLangStickerPatch\<mã thư mục cài>\
+%LOCALAPPDATA%\GiaoLangStickerPatch\<mã thư mục cài>\          (Windows)
+~/Library/Application Support/GiaoLangStickerPatch/<mã thư mục cài>/   (macOS)
 ```
 
 Giữ thư mục này khi còn cần khôi phục. Bộ sticker được lưu trong dữ liệu cục bộ của Zalo; nên xuất ZIP trước khi xóa dữ liệu ứng dụng hoặc chuyển máy.
@@ -189,6 +206,15 @@ GiaoLangSticker-0.2.1-Windows-x64.zip
 GiaoLangSticker-0.2.1-Windows-x64.zip.sha256
 ```
 
+Trên macOS, PyInstaller tạo chương trình cho đúng kiến trúc của Python đang chạy, nên cần build một lần trên mỗi loại máy (máy Apple Silicon → `arm64`, máy Intel → `x64`):
+
+```bash
+python3 -m pip install -r requirements-build.txt
+python3 tools/package_release.py   # → dist/GiaoLangSticker-0.2.1-macOS-<arm64|x64>.zip
+```
+
+Workflow `.github/workflows/release-macos.yml` build cả hai bản trên runner Apple Silicon và Intel.
+
 Bộ ZIP chỉ đóng gói chương trình cài/gỡ, hướng dẫn và thông tin giấy phép; không kèm Zalo gốc hoặc sticker cá nhân. `dist/`, `build/`, các bản sao ASAR và dữ liệu thử nghiệm không được đưa vào Git.
 
 ### Cấu trúc dự án
@@ -197,7 +223,7 @@ Bộ ZIP chỉ đóng gói chương trình cài/gỡ, hướng dẫn và thông 
 src/                     Giao diện sticker, gửi ảnh và định dạng gói ZIP
 tools/patch.py           Đọc/ghi ASAR, kiểm tra mã và áp dụng thay đổi
 tools/portable.py        Tìm Zalo, cài, gỡ, kiểm tra và build
-tools/package_release.py Đóng gói chương trình Windows và ZIP phát hành
+tools/package_release.py Đóng gói chương trình Windows/macOS và ZIP phát hành
 tests/                   Kiểm tra ZIP, trình cài và tích hợp ASAR
 vendor/fflate/           Thư viện ZIP kèm giấy phép
 distribution/            Hướng dẫn được kèm trong bộ cài
